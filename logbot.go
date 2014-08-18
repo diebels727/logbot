@@ -3,7 +3,6 @@ package logbot
 import(
   // "fmt"
   "github.com/diebels727/go-ircevent"
-  "flag"
   "time"
   "fmt"
   "os"
@@ -18,20 +17,11 @@ import(
 )
 
 type LogBot struct {
-  server string
-  channel string
-  channels []string
-  port string
-  botname string
-  username string
-}
-
-func init() {
-  flag.StringVar(&server,"server","irc.freenode.org","IRC server FQDN")
-  flag.StringVar(&channel,"channel","#cinch-bots","IRC channel name (including #-sign)")
-  flag.StringVar(&port,"port","6667","IRC server port number")
-  flag.StringVar(&botname,"botname","logbot","Name of the bot visible on IRC channel")
-  flag.StringVar(&username,"username","logbot","Username to login with to IRC")
+  Server string
+  Channel string
+  Port string
+  Botname string
+  Username string
 }
 
 func path_exists(path string) (bool, error) {
@@ -41,22 +31,24 @@ func path_exists(path string) (bool, error) {
     return false, err
 }
 
-
 func check(e error) {
     if e != nil {
         panic(e)
     }
 }
 
-func main() {
-  flag.Parse()
-  // log := make(chan string)
+func New(server string,channel string,port string,botname string,username string) (*LogBot) {
+  return &LogBot{server,channel,port,botname,username}
+}
+
+
+func (l *LogBot) RunAndLoop() {
   sql := make(chan string)  //this will be buffered
 
   //replace all instances of .'s
-  server_slug := strings.Replace(server,".","-",-1)
+  server_slug := strings.Replace(l.Server,".","-",-1)
   //remove #'s and .'s from channel
-  channel_slug := strings.Replace(channel,"#","",-1)
+  channel_slug := strings.Replace(l.Channel,"#","",-1)
   channel_slug = strings.Replace(channel_slug,".","-",-1)
 
   //lockfile so we do no harm
@@ -77,7 +69,6 @@ func main() {
   db, err := sqlite3.Open(db_path)
   check(err)
   defer db.Close()
-
   db.Exec(`CREATE TABLE events(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp INTEGER,
@@ -86,28 +77,24 @@ func main() {
     message TEXT
   );`)
 
-  con := irc.IRC(username,botname)
+  //connect to IRC
+  con := irc.IRC(l.Username,l.Botname)
   con.Debug = true
   con.VerboseCallbackHandler = true
-  err = con.Connect(server + ":" + port)
+  err = con.Connect(l.Server + ":" + l.Port)
   check(err)
 
   con.AddCallback("001", func (e *irc.Event) {
+    channel := l.Channel
     byte_channel := []byte(channel)
     //prepend hash if not hashed
     if !(byte_channel[0] == []byte("#")[0]) {
       channel = "#"+channel
     }
     con.Join(channel)
-    // con.SendRaw("LIST")
   })
+
   con.AddCallback("PRIVMSG", func (e *irc.Event) {
-    // t := time.Now().UTC()
-    // t_integer := int64(t)
-    // db.Exec(`INSERT INTO events(message) VALUES("first message")`)
-    // timestamp := t.Format("20060102150405")
-    // message := "{" + " \\\"timestamp\\\": " + "\\\""+timestamp+"\\\"," + "\\\"username\\\": "+"\\\""+e.Nick+"\\\"," + "\\\"host\\\": " + "\\\"" + e.Host + "\\\"," + "\\\"message\\\": " + "\\\"" + e.Message() + "\\\""+"}"
-    // log <- message
     t := time.Now().Unix()
     t_str := fmt.Sprintf("%d",t)
     sql_statement := "INSERT INTO events(timestamp,username,host,message) VALUES("+"\""+t_str+"\""+","+"\""+e.Nick+"\""+","+"\""+e.Host+"\""+","+"\""+e.Message()+"\""+");"
@@ -117,32 +104,17 @@ func main() {
   //this is an event for receiving a channel from a channel list
   //each channel listed triggers an event
   con.AddCallback("322",func(e *irc.Event) {
-    // channel_event := e.Arguments[1]
-    // channels = append(channels,channel_event)
+
   })
 
   //this event is triggered when the channel list is done (and perhaps when it begins)
   con.AddCallback("323",func(e *irc.Event) {
-    // for _,v := range channels {
-    //   fmt.Println("Channel: ",v)
-    // }
-    con.Join(channel)
+    con.Join(l.Channel)
   })
-
-  // go func(log chan string) {
-  //   for {
-  //     message := <- log
-  //     fmt.Println(message)
-  //   }
-  // }(log)
 
   go func(sql chan string) {
     for {
-
       statement := <- sql
-
-      // fmt.Println("SQL: ",statement)
-
       db.Exec(statement)
     }
   }(sql)
