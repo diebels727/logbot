@@ -54,20 +54,35 @@ func (l *LogBot) RunAndLoop() {
   //lockfile so we do no harm
   log_path := path.Join(server_slug,channel_slug)
   abs_log_path,err := filepath.Abs(log_path)
-  check(err)
+  if err != nil {
+    fmt.Println("Log path absolute error.")
+    return
+  }
   file_mode := os.FileMode(0777)
   err = os.MkdirAll(log_path,file_mode)
-  check(err)
+  if err != nil {
+    fmt.Println("Cannot create log path.")
+    return
+  }
   lock_file,err := lockfile.New(path.Join(abs_log_path,"lock"))
-  check(err)
+  if err != nil {
+    fmt.Println("Cannot get lock, aborting...")
+    return
+  }
   err = lock_file.TryLock()
-  check(err)
+  if err != nil {
+    fmt.Println("Process locked, aborting...")
+    return
+  }
 
   //persistence
   db_file := "db.sqlite3"
   db_path := path.Join(server_slug,channel_slug,db_file)
   db, err := sqlite3.Open(db_path)
-  check(err)
+  if err != nil {
+    fmt.Println("Cannot get handle to DB, aborting...")
+    return
+  }
   defer db.Close()
   db.Exec(`CREATE TABLE events(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,7 +97,10 @@ func (l *LogBot) RunAndLoop() {
   con.Debug = true
   con.VerboseCallbackHandler = true
   err = con.Connect(l.Server + ":" + l.Port)
-  check(err)
+  if err != nil {
+    fmt.Println("Cannot connect to server, aborting...")
+    return
+  }
 
   con.AddCallback("001", func (e *irc.Event) {
     channel := l.Channel
